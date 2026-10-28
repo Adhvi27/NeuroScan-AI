@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/.venv/
+
+# Build
+frontend/dist/
+*.egg-info/
+dist/
+build/
+
+# ML artifacts
+ml/checkpoints/
+ml/runs/
+*.pt
+*.pth
+!ml/checkpoints/.gitkeep
+
+# Uploads & generated data
+backend/data/uploads/
+backend/data/results/
+backend/data/sample/
+!backend/data/.gitkeep
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
