@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { Brain, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -6,12 +6,16 @@ import { Button } from "@/components/ui/button";
 
 const links = [
   { to: "/", label: "Home" },
+  { to: "/applications", label: "MRI Applications" },
+  { to: "/learn", label: "Learn" },
   { to: "/analyze", label: "Analyze MRI" },
-  { to: "/results", label: "Segmentation Results" },
-  { to: "/visualize", label: "3D Visualization" },
-  { to: "/performance", label: "Model Performance" },
+  { to: "/results", label: "Results" },
+  { to: "/visualize", label: "3D View" },
+  { to: "/performance", label: "Metrics" },
   { to: "/about", label: "About" },
 ];
+
+const dashboardPrefixes = ["/analyze", "/results", "/visualize", "/report", "/learn"];
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
@@ -71,27 +75,46 @@ export function Navbar() {
   );
 }
 
-export function Footer() {
+export function Footer({ dark }: { dark?: boolean }) {
   return (
-    <footer className="mt-auto border-t border-emerald-100 bg-white/80">
-      <div className="mx-auto max-w-7xl px-4 py-8 text-sm text-slate-600 md:px-6">
-        <p className="font-medium text-emerald-900">NeuroScan AI — Research Prototype</p>
-        <p className="mt-2 max-w-3xl leading-relaxed">
+    <footer
+      className={
+        dark
+          ? "mt-auto border-t border-slate-800 bg-slate-950/80"
+          : "mt-auto border-t border-emerald-100 bg-white/80"
+      }
+    >
+      <div className="mx-auto max-w-7xl px-4 py-8 text-sm md:px-6">
+        <p className={dark ? "font-medium text-emerald-300" : "font-medium text-emerald-900"}>
+          NeuroScan AI — Research Prototype
+        </p>
+        <p className={`mt-2 max-w-3xl leading-relaxed ${dark ? "text-slate-400" : "text-slate-600"}`}>
           For educational and research use only. Not FDA-cleared and not intended for clinical
           diagnosis or treatment decisions. Always consult qualified medical professionals.
         </p>
-        <p className="mt-3 text-xs text-slate-500">© {new Date().getFullYear()} NeuroScan AI Project</p>
+        <p className={`mt-3 text-xs ${dark ? "text-slate-600" : "text-slate-500"}`}>
+          © {new Date().getFullYear()} NeuroScan AI Project
+        </p>
       </div>
     </footer>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const isDashboard = dashboardPrefixes.some((p) => location.pathname.startsWith(p));
+
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-emerald-50/80 via-white to-emerald-50/40">
+    <div
+      className={
+        isDashboard
+          ? "flex min-h-screen flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950"
+          : "flex min-h-screen flex-col bg-gradient-to-b from-emerald-50/80 via-white to-emerald-50/40"
+      }
+    >
       <Navbar />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 md:px-6">{children}</main>
-      <Footer />
+      <Footer dark={isDashboard} />
     </div>
   );
 }

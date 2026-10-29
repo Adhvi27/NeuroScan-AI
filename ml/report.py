@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from ml.inference import REGION_NAMES
-
 
 def build_text_report(
     scan_id: str,
@@ -9,16 +7,24 @@ def build_text_report(
     regions: list,
     inference_ms: float,
     device: str,
+    model_id: str | None = None,
+    model_name: str | None = None,
 ) -> str:
     lines = [
         "NeuroScan AI — Segmentation Report",
         "==================================",
         f"Scan ID: {scan_id}",
         f"Job ID: {job_id}",
-        f"Inference time: {inference_ms:.1f} ms ({device})",
-        "",
-        "Region volumes (predicted voxels):",
     ]
+    if model_name or model_id:
+        lines.append(f"Model: {model_name or model_id} ({model_id or 'unknown'})")
+    lines.extend(
+        [
+            f"Inference time: {inference_ms:.1f} ms ({device})",
+            "",
+            "Region volumes (predicted voxels):",
+        ]
+    )
     for r in regions:
         if isinstance(r, dict):
             name = r.get("region")

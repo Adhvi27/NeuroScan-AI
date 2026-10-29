@@ -50,19 +50,25 @@ export default function HomePage() {
       <section className="grid items-center gap-10 lg:grid-cols-2">
         <div className="space-y-6 text-left">
           <p className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">
-            Brain MRI Research Platform
+            Multi-Application MRI Analysis Platform
           </p>
           <h1 className="text-4xl font-semibold leading-tight text-emerald-950 md:text-5xl">
-            AI-Powered Brain Tumor Segmentation
+            AI-Guided MRI Learning & Analysis
           </h1>
           <p className="max-w-xl text-base leading-relaxed text-slate-600">
-            NeuroScan AI is a college-level research prototype for uploading brain MRI volumes,
-            running 3D deep learning segmentation, exploring results interactively, and evaluating
-            model performance with standard metrics.
+            Choose from brain tumor, stroke, MS, spine, MSK, abdominal, and cardiac MRI modules. After you
+            upload a scan, learning points, educational risk levels, and treatment curriculum summaries are
+            generated from your analysis results.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button asChild size="lg">
+              <Link to="/applications">All MRI Applications</Link>
+            </Button>
+            <Button asChild variant="secondary" size="lg">
               <Link to="/analyze">Analyze MRI</Link>
+            </Button>
+            <Button asChild variant="secondary" size="lg">
+              <Link to="/learn">Student Learning Hub</Link>
             </Button>
             <Button asChild variant="secondary" size="lg">
               <Link to="/performance">Explore Model</Link>

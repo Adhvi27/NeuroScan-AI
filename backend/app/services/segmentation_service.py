@@ -11,12 +11,15 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.config import DEFAULT_CHECKPOINT, RESULTS_DIR
+from app.core.config import CHECKPOINT_DIR
 from app.services import nifti_service
 from app.services.storage import load_scan_meta, new_id, result_dir, save_scan_meta, write_json
 from ml.evaluate import compute_region_metrics
 from ml.inference import load_model, predict_volume
 from ml.report import build_text_report
+from app.services.spatial_service import compute_class_probabilities, compute_spatial_stats
+from app.services.clinical_education_service import build_clinical_education_package
+from app.services.model_router import normalize_application_type, profile_for_application, resolve_inference_plan
 
 
 def get_device() -> torch.device:
@@ -25,20 +28,27 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-def run_segmentation(scan_id: str) -> dict:
+def run_segmentation(scan_id: str, application_type: str = "brain_tumor") -> dict:
+    application_type = normalize_application_type(application_type)
     meta = load_scan_meta(scan_id)
     nifti_path = Path(meta["nifti_path"])
     volume, _ = nifti_service.load_nifti(nifti_path)
+
+    plan = resolve_inference_plan(application_type, CHECKPOINT_DIR)
+    profile = plan["profile"]
+    requested_profile = profile_for_application(application_type)
 
     job_id = new_id("job_")
     out = result_dir(job_id)
     out.mkdir(parents=True, exist_ok=True)
 
     device = get_device()
-    model, ckpt_meta = load_model(DEFAULT_CHECKPOINT, device)
+    checkpoint_path = plan["checkpoint_path"]
+    model, ckpt_meta = load_model(checkpoint_path, device, profile=profile)
 
     t0 = time.perf_counter()
     pred = predict_volume(model, volume, device)
+    pred = plan["postprocess"](pred)
     inference_ms = (time.perf_counter() - t0) * 1000
 
     mask_path = out / "segmentation.nii.gz"
@@ -49,10 +59,27 @@ def run_segmentation(scan_id: str) -> dict:
         volume, preview_dir, prefix="overlay", overlay=pred, max_slices=12
     )
 
-    regions = compute_region_metrics(pred, ground_truth=None)
+    regions = compute_region_metrics(pred, ground_truth=None, region_names=profile.region_names)
+    voxel_size = meta.get("voxel_size_mm") or [1.0, 1.0, 1.0]
+    spatial = compute_spatial_stats(pred, voxel_size, anatomy_mode=profile.anatomy_mode)
+    class_probabilities = compute_class_probabilities(pred, profile)
+    clinical_education = build_clinical_education_package(
+        application_type,
+        spatial,
+        regions,
+        class_probabilities,
+    )
     report_path = out / "report.txt"
     report_path.write_text(
-        build_text_report(scan_id, job_id, regions, inference_ms, device.type),
+        build_text_report(
+            scan_id,
+            job_id,
+            regions,
+            inference_ms,
+            device.type,
+            model_id=profile.model_id,
+            model_name=profile.display_name,
+        ),
         encoding="utf-8",
     )
 
@@ -62,15 +89,25 @@ def run_segmentation(scan_id: str) -> dict:
         "status": "completed",
         "inference_ms": inference_ms,
         "device": device.type,
-        "regions": [r.model_dump() if hasattr(r, "model_dump") else r for r in regions],
+        "regions": [r if isinstance(r, dict) else r for r in regions],
+        "spatial": spatial,
+        "class_probabilities": class_probabilities,
+        "clinical_education": clinical_education,
+        "application_type": application_type,
+        "requested_model_id": requested_profile.model_id,
+        "model_id": profile.model_id,
+        "model_name": profile.display_name,
+        "model_fallback": plan["model_fallback"],
+        "model_fallback_reason": plan["model_fallback_reason"],
         "overlay_slices": overlay_names,
         "mask_path": str(mask_path),
         "report_path": str(report_path),
-        "checkpoint": str(DEFAULT_CHECKPOINT.name),
+        "checkpoint": checkpoint_path.name,
         "model_meta": ckpt_meta,
     }
     write_json(out / "result.json", result)
     meta["last_job_id"] = job_id
+    meta["application_type"] = application_type
     save_scan_meta(scan_id, meta)
     return result
 

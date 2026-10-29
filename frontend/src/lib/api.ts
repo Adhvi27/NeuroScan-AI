@@ -23,6 +23,50 @@ export type DicomSeries = {
   modality?: string;
 };
 
+export type MriApplicationOption = {
+  id: string;
+  title: string;
+  description: string;
+  focus: string;
+  category?: string;
+  typical_sequences?: string[];
+  learning_goals?: string[];
+  model_id?: string;
+};
+
+export type ModelInfo = {
+  model_id: string;
+  display_name: string;
+  checkpoint: string;
+  checkpoint_present: boolean;
+  out_channels: number;
+  region_labels: string[];
+  application_types: string[];
+  anatomy_mode: string;
+};
+
+export type ClinicalEducation = {
+  application_id: string;
+  application_title: string;
+  learning: {
+    summary: string;
+    key_findings: string[];
+    concepts_to_study: string[];
+  };
+  risk: {
+    level: string;
+    label: string;
+    score: number;
+    drivers: string[];
+    disclaimer: string;
+  };
+  treatment: {
+    urgency_note: string;
+    options: { name: string; notes: string }[];
+    disclaimer: string;
+  };
+};
+
 export type SegmentationResponse = {
   job_id: string;
   scan_id: string;
@@ -35,13 +79,35 @@ export type SegmentationResponse = {
     iou?: number | null;
     volume_voxels: number;
   }[];
+  spatial?: {
+    tumor_detected?: boolean;
+    confidence?: number;
+    center_voxel?: number[];
+    center_normalized?: number[];
+    bounding_box_voxel?: number[][];
+    tumor_volume_cm3?: number;
+    surface_area_cm2?: number;
+    affected_region?: string;
+  };
+  class_probabilities?: { label: string; probability: number }[];
+  clinical_education?: ClinicalEducation;
+  application_type?: string;
+  model_id?: string;
+  model_name?: string;
+  requested_model_id?: string;
+  model_fallback?: boolean;
+  model_fallback_reason?: string | null;
+  checkpoint?: string;
   overlay_slices: string[];
   mask_url?: string;
   report_url?: string;
 };
 
 export type ModelPerformance = {
+  model_id?: string | null;
+  model_name?: string | null;
   checkpoint: string;
+  checkpoint_present?: boolean;
   trained_at?: string | null;
   epochs?: number | null;
   mean_dice?: number | null;
@@ -81,13 +147,35 @@ export async function loadSampleScan() {
   return data;
 }
 
-export async function runSegmentation(scan_id: string) {
-  const { data } = await api.post<SegmentationResponse>("/api/segment", { scan_id });
+export async function fetchApplications() {
+  const { data } = await api.get<{ applications: MriApplicationOption[]; count?: number }>(
+    "/api/applications",
+  );
+  return data.applications;
+}
+
+export async function runSegmentation(scan_id: string, application_type: string) {
+  const { data } = await api.post<SegmentationResponse>("/api/segment", {
+    scan_id,
+    application_type,
+  });
   return data;
 }
 
-export async function fetchModelPerformance() {
-  const { data } = await api.get<ModelPerformance>("/api/model/performance");
+export async function fetchModels() {
+  const { data } = await api.get<ModelInfo[]>("/api/models");
+  return data;
+}
+
+export async function fetchAllModelPerformance() {
+  const { data } = await api.get<ModelPerformance[]>("/api/models/performance");
+  return data;
+}
+
+export async function fetchModelPerformance(modelId?: string) {
+  const { data } = await api.get<ModelPerformance>("/api/model/performance", {
+    params: modelId ? { model_id: modelId } : undefined,
+  });
   return data;
 }
 

@@ -5,6 +5,7 @@ from app.core.config import MAX_UPLOAD_BYTES, RESULTS_DIR, SAMPLE_DIR, UPLOAD_DI
 from app.models.schemas import (
     DicomFinalizeRequest,
     DicomStagingResponse,
+    ModelInfo,
     ModelPerformance,
     ScanSummary,
     SegmentationRequest,
@@ -12,8 +13,11 @@ from app.models.schemas import (
     UploadResponse,
 )
 from app.services import dicom_service, nifti_service, segmentation_service
-from app.services.metrics_service import get_model_performance
+from app.services.metrics_service import get_model_performance, list_all_model_performance
+from app.services.application_catalog import list_applications
+from app.services.model_router import list_models_for_api, model_id_for_application
 from app.services.storage import list_scans, load_scan_meta, new_id, save_scan_meta, scan_dir
+from app.core.config import CHECKPOINT_DIR
 
 router = APIRouter(prefix="/api")
 
@@ -194,6 +198,24 @@ def get_preview(scan_id: str, filename: str):
     return FileResponse(path, media_type="image/png")
 
 
+@router.get("/applications")
+def get_applications():
+    apps = []
+    for row in list_applications():
+        apps.append({**row, "model_id": model_id_for_application(row["id"])})
+    return {"applications": apps, "count": len(apps)}
+
+
+@router.get("/applications/{app_id}")
+def get_application_detail(app_id: str):
+    from app.services.application_catalog import get_application
+
+    app = get_application(app_id)
+    if not app:
+        raise HTTPException(404, "Application not found")
+    return app
+
+
 @router.post("/segment", response_model=SegmentationResponse)
 def segment(body: SegmentationRequest):
     try:
@@ -201,7 +223,7 @@ def segment(body: SegmentationRequest):
     except FileNotFoundError as exc:
         raise HTTPException(404, "Scan not found") from exc
     try:
-        result = segmentation_service.run_segmentation(body.scan_id)
+        result = segmentation_service.run_segmentation(body.scan_id, body.application_type)
     except Exception as exc:
         raise HTTPException(500, f"Segmentation failed: {exc}") from exc
 
@@ -213,6 +235,16 @@ def segment(body: SegmentationRequest):
         inference_ms=result["inference_ms"],
         device=result["device"],
         regions=result["regions"],
+        spatial=result.get("spatial"),
+        class_probabilities=result.get("class_probabilities", []),
+        clinical_education=result.get("clinical_education"),
+        application_type=result.get("application_type"),
+        model_id=result.get("model_id"),
+        model_name=result.get("model_name"),
+        requested_model_id=result.get("requested_model_id"),
+        model_fallback=bool(result.get("model_fallback")),
+        model_fallback_reason=result.get("model_fallback_reason"),
+        checkpoint=result.get("checkpoint"),
         overlay_slices=[f"/api/results/{job_id}/preview/{n}" for n in result["overlay_slices"]],
         mask_url=f"/api/results/{job_id}/mask",
         report_url=f"/api/results/{job_id}/report",
@@ -251,6 +283,16 @@ def download_report(job_id: str):
     return FileResponse(path, media_type="text/plain", filename="neuroscan_report.txt")
 
 
+@router.get("/models", response_model=list[ModelInfo])
+def list_models():
+    return list_models_for_api(CHECKPOINT_DIR)
+
+
 @router.get("/model/performance", response_model=ModelPerformance)
-def model_performance():
-    return get_model_performance()
+def model_performance(model_id: str | None = None):
+    return get_model_performance(model_id)
+
+
+@router.get("/models/performance", response_model=list[ModelPerformance])
+def all_model_performance():
+    return list_all_model_performance()

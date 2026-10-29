@@ -4,8 +4,10 @@ import type { SegmentationResponse, UploadResponse } from "@/lib/api";
 type SessionState = {
   upload?: UploadResponse;
   segmentation?: SegmentationResponse;
+  applicationType: string;
   setUpload: (u?: UploadResponse) => void;
   setSegmentation: (s?: SegmentationResponse) => void;
+  setApplicationType: (id: string) => void;
 };
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -13,9 +15,17 @@ const SessionContext = createContext<SessionState | null>(null);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [upload, setUpload] = useState<UploadResponse>();
   const [segmentation, setSegmentation] = useState<SegmentationResponse>();
+  const [applicationType, setApplicationType] = useState("brain_tumor");
   const value = useMemo(
-    () => ({ upload, segmentation, setUpload, setSegmentation }),
-    [upload, segmentation],
+    () => ({
+      upload,
+      segmentation,
+      applicationType,
+      setUpload,
+      setSegmentation,
+      setApplicationType,
+    }),
+    [upload, segmentation, applicationType],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

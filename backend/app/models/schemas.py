@@ -39,6 +39,7 @@ class DicomFinalizeRequest(BaseModel):
 
 class SegmentationRequest(BaseModel):
     scan_id: str
+    application_type: str = "brain_tumor"
 
 
 class RegionMetrics(BaseModel):
@@ -48,6 +49,56 @@ class RegionMetrics(BaseModel):
     volume_voxels: int
 
 
+class SpatialStats(BaseModel):
+    tumor_detected: bool = False
+    confidence: float = 0.0
+    center_voxel: list[float] = Field(default_factory=list)
+    center_normalized: list[float] = Field(default_factory=list)
+    bounding_box_voxel: list[list[int]] = Field(default_factory=list)
+    tumor_volume_voxels: int = 0
+    tumor_volume_cm3: float = 0.0
+    surface_area_cm2: float = 0.0
+    affected_region: str = ""
+
+
+class ClassProbability(BaseModel):
+    label: str
+    probability: float
+
+
+class RiskAssessment(BaseModel):
+    level: str
+    label: str
+    score: float
+    drivers: list[str] = Field(default_factory=list)
+    disclaimer: str = ""
+
+
+class TreatmentOption(BaseModel):
+    name: str
+    notes: str
+
+
+class TreatmentEducation(BaseModel):
+    urgency_note: str
+    options: list[TreatmentOption] = Field(default_factory=list)
+    disclaimer: str = ""
+
+
+class AnalysisLearning(BaseModel):
+    summary: str
+    key_findings: list[str] = Field(default_factory=list)
+    concepts_to_study: list[str] = Field(default_factory=list)
+
+
+class ClinicalEducation(BaseModel):
+    application_id: str
+    application_title: str
+    learning: AnalysisLearning
+    risk: RiskAssessment
+    treatment: TreatmentEducation
+
+
 class SegmentationResponse(BaseModel):
     job_id: str
     scan_id: str
@@ -55,13 +106,37 @@ class SegmentationResponse(BaseModel):
     inference_ms: float | None = None
     device: str
     regions: list[RegionMetrics] = Field(default_factory=list)
+    spatial: SpatialStats | None = None
+    class_probabilities: list[ClassProbability] = Field(default_factory=list)
+    clinical_education: ClinicalEducation | None = None
+    application_type: str | None = None
+    model_id: str | None = None
+    model_name: str | None = None
+    requested_model_id: str | None = None
+    model_fallback: bool = False
+    model_fallback_reason: str | None = None
+    checkpoint: str | None = None
     overlay_slices: list[str] = Field(default_factory=list)
     mask_url: str | None = None
     report_url: str | None = None
 
 
-class ModelPerformance(BaseModel):
+class ModelInfo(BaseModel):
+    model_id: str
+    display_name: str
     checkpoint: str
+    checkpoint_present: bool
+    out_channels: int
+    region_labels: list[str]
+    application_types: list[str]
+    anatomy_mode: str
+
+
+class ModelPerformance(BaseModel):
+    model_id: str | None = None
+    model_name: str | None = None
+    checkpoint: str
+    checkpoint_present: bool = True
     trained_at: str | None
     epochs: int | None
     mean_dice: float | None

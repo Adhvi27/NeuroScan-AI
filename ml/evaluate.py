@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ml.inference import REGION_NAMES
+from ml.model_registry import NEURO_PROFILE
 
 
 def dice_score(pred: np.ndarray, gt: np.ndarray, label: int) -> float | None:
@@ -24,9 +24,14 @@ def iou_score(pred: np.ndarray, gt: np.ndarray, label: int) -> float | None:
     return float(inter / (union + 1e-8))
 
 
-def compute_region_metrics(pred: np.ndarray, ground_truth: np.ndarray | None = None) -> list[dict]:
+def compute_region_metrics(
+    pred: np.ndarray,
+    ground_truth: np.ndarray | None = None,
+    region_names: dict[int, str] | None = None,
+) -> list[dict]:
+    names = region_names or NEURO_PROFILE.region_names
     rows: list[dict] = []
-    for label, name in REGION_NAMES.items():
+    for label, name in names.items():
         volume_voxels = int((pred == label).sum())
         row: dict = {
             "region": name,

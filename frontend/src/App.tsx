@@ -1,6 +1,9 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/Shell";
 import { SessionProvider } from "@/context/SessionContext";
+import ApplicationsPage from "@/pages/ApplicationsPage";
+import LearnPage from "@/pages/LearnPage";
+import ReportPage from "@/pages/ReportPage";
 import AboutPage from "@/pages/AboutPage";
 import AnalyzePage from "@/pages/AnalyzePage";
 import HomePage from "@/pages/HomePage";
@@ -15,9 +18,12 @@ export default function App() {
         <AppShell>
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/applications" element={<ApplicationsPage />} />
+            <Route path="/learn" element={<LearnPage />} />
             <Route path="/analyze" element={<AnalyzePage />} />
             <Route path="/results" element={<ResultsPage />} />
             <Route path="/visualize" element={<VisualizePage />} />
+            <Route path="/report" element={<ReportPage />} />
             <Route path="/performance" element={<PerformancePage />} />
             <Route path="/about" element={<AboutPage />} />
           </Routes>
