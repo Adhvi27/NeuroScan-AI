@@ -28,13 +28,31 @@ def compute_region_metrics(
     pred: np.ndarray,
     ground_truth: np.ndarray | None = None,
     region_names: dict[int, str] | None = None,
+    anatomy_mode: str = "neuro",
 ) -> list[dict]:
+    from ml.region_legend import kind_for_label
+
     names = region_names or NEURO_PROFILE.region_names
     rows: list[dict] = []
+
+    bg_voxels = int((pred == 0).sum())
+    rows.append(
+        {
+            "label_id": 0,
+            "region": "Non-tumor (no overlay)",
+            "kind": "non_tumor",
+            "volume_voxels": bg_voxels,
+            "dice": None,
+            "iou": None,
+        }
+    )
+
     for label, name in names.items():
         volume_voxels = int((pred == label).sum())
         row: dict = {
+            "label_id": label,
             "region": name,
+            "kind": kind_for_label(label, name, anatomy_mode),
             "volume_voxels": volume_voxels,
             "dice": None,
             "iou": None,

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { Download, RotateCcw } from "lucide-react";
@@ -10,7 +10,10 @@ import {
   type OverlayMode,
   type SpatialData,
 } from "@/components/visualization/BrainReconstruction3D";
+import { NiiVueMprViewer, type MprLayout } from "@/components/visualization/NiiVueMprViewer";
+import { SegmentationRegionPanel } from "@/components/visualization/SegmentationRegionPanel";
 import { absoluteApiUrl } from "@/lib/api";
+import { defaultVisibleLabels, fallbackLegendFromRegions } from "@/lib/segmentationRegions";
 import { useSession } from "@/context/SessionContext";
 
 const defaultSpatial: SpatialData = {
@@ -30,17 +33,31 @@ const defaultSpatial: SpatialData = {
 export default function VisualizePage() {
   const { segmentation } = useSession();
   const controlsRef = useRef<OrbitControlsImpl>(null);
-  const [viewMode, setViewMode] = useState<"3d" | "axial" | "coronal" | "sagittal">("3d");
+  const [viewMode, setViewMode] = useState<"3d" | MprLayout>("multiplanar");
   const [overlayMode, setOverlayMode] = useState<OverlayMode>("brainTumor");
+  const [showMri, setShowMri] = useState(true);
+  const [visibleLabels, setVisibleLabels] = useState<Record<number, boolean>>({});
+
+  const regionLegend = useMemo(() => {
+    if (segmentation?.region_legend?.length) return segmentation.region_legend;
+    if (segmentation?.regions?.length) return fallbackLegendFromRegions(segmentation.regions);
+    return [];
+  }, [segmentation]);
+
+  useEffect(() => {
+    if (regionLegend.length) {
+      setVisibleLabels(defaultVisibleLabels(regionLegend));
+    }
+  }, [segmentation?.job_id, regionLegend]);
+
+  const volumeUrl = segmentation
+    ? segmentation.volume_url
+      ? absoluteApiUrl(segmentation.volume_url)
+      : absoluteApiUrl(`/api/scans/${segmentation.scan_id}/volume`)
+    : undefined;
+  const maskUrl = segmentation?.mask_url ? absoluteApiUrl(segmentation.mask_url) : undefined;
 
   const spatial = (segmentation?.spatial as SpatialData | undefined) ?? defaultSpatial;
-  const overlays = segmentation?.overlay_slices.map(absoluteApiUrl) ?? [];
-  const sliceForView = useMemo(() => {
-    if (!overlays.length) return undefined;
-    const i =
-      viewMode === "axial" ? 0 : viewMode === "coronal" ? Math.floor(overlays.length / 2) : overlays.length - 1;
-    return overlays[Math.min(i, overlays.length - 1)];
-  }, [overlays, viewMode]);
 
   const classData =
     segmentation?.class_probabilities?.map((c) => ({
@@ -68,20 +85,29 @@ export default function VisualizePage() {
     <DashboardFrame
       activeStep={3}
       title="3D Brain Reconstruction"
-      subtitle="Rotate, zoom, and explore tumor geometry inside a stylized brain envelope"
+      subtitle="Niivue MPR with mask overlay, or stylized 3D teaching scene"
     >
       <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
           <div className="border-b border-slate-800 px-4 py-2 text-xs font-medium uppercase tracking-wide text-emerald-400">
-            {viewMode === "3d" ? "3D View" : `${viewMode} slice preview`}
+            {viewMode === "3d" ? "3D teaching scene" : `Niivue ${viewMode}`}
           </div>
           <div className="relative h-[420px] md:h-[480px]">
             {viewMode === "3d" ? (
               <BrainReconstruction3D spatial={spatial} overlayMode={overlayMode} controlsRef={controlsRef} />
-            ) : sliceForView ? (
-              <img src={sliceForView} alt={`${viewMode} view`} className="h-full w-full object-contain bg-black" />
+            ) : volumeUrl && maskUrl ? (
+              <NiiVueMprViewer
+                volumeUrl={volumeUrl}
+                maskUrl={maskUrl}
+                layout={viewMode}
+                height={480}
+                className="h-full"
+                regionLegend={regionLegend}
+                visibleLabels={visibleLabels}
+                showMri={showMri}
+              />
             ) : (
-              <div className="flex h-full items-center justify-center text-slate-500">No slice available</div>
+              <div className="flex h-full items-center justify-center text-slate-500">No segmentation mask</div>
             )}
           </div>
         </div>
@@ -93,6 +119,7 @@ export default function VisualizePage() {
               onChange={(v) => setViewMode(v as typeof viewMode)}
               options={[
                 ["3d", "3D View"],
+                ["multiplanar", "Multi-planar MPR"],
                 ["axial", "Axial"],
                 ["coronal", "Coronal"],
                 ["sagittal", "Sagittal"],
@@ -114,7 +141,17 @@ export default function VisualizePage() {
             <RotateCcw className="h-4 w-4" /> Reset View
           </Button>
           <Panel title="Region Information">
-            <dl className="space-y-2 text-sm text-slate-300">
+            {regionLegend.length > 0 && (
+              <SegmentationRegionPanel
+                legend={regionLegend}
+                regions={segmentation.regions}
+                showMri={showMri}
+                onShowMriChange={setShowMri}
+                visibleLabels={visibleLabels}
+                onVisibleLabelsChange={setVisibleLabels}
+              />
+            )}
+            <dl className="mt-4 space-y-2 text-sm text-slate-300">
               <Row label="Tumor Volume" value={`${spatial.tumor_volume_cm3 ?? "—"} cm³`} />
               <Row label="Surface Area" value={`${spatial.surface_area_cm2 ?? "—"} cm²`} />
               <Row

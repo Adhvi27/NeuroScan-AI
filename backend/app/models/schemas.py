@@ -40,13 +40,26 @@ class DicomFinalizeRequest(BaseModel):
 class SegmentationRequest(BaseModel):
     scan_id: str
     application_type: str = "brain_tumor"
+    platform_mode: str = "education"
 
 
 class RegionMetrics(BaseModel):
+    label_id: int = 0
     region: str
+    kind: str = "pathology"
     dice: float | None = None
     iou: float | None = None
     volume_voxels: int
+    volume_cm3: float | None = None
+
+
+class RegionLegendEntry(BaseModel):
+    label_id: int
+    name: str
+    short_name: str
+    kind: str
+    color_rgb: list[int]
+    description: str = ""
 
 
 class SpatialStats(BaseModel):
@@ -99,6 +112,20 @@ class ClinicalEducation(BaseModel):
     treatment: TreatmentEducation
 
 
+class ClinicalWorkstation(BaseModel):
+    mode: str
+    application_type: str
+    model_name: str
+    msd_task_id: str | None = None
+    primary_finding: str
+    location_summary: str
+    total_pathology_voxels: int
+    volume_cm3: float | None = None
+    confidence_note: float | None = None
+    required_actions: list[str] = Field(default_factory=list)
+    disclaimer: str = ""
+
+
 class SegmentationResponse(BaseModel):
     job_id: str
     scan_id: str
@@ -106,6 +133,7 @@ class SegmentationResponse(BaseModel):
     inference_ms: float | None = None
     device: str
     regions: list[RegionMetrics] = Field(default_factory=list)
+    region_legend: list[RegionLegendEntry] = Field(default_factory=list)
     spatial: SpatialStats | None = None
     class_probabilities: list[ClassProbability] = Field(default_factory=list)
     clinical_education: ClinicalEducation | None = None
@@ -116,8 +144,13 @@ class SegmentationResponse(BaseModel):
     model_fallback: bool = False
     model_fallback_reason: str | None = None
     checkpoint: str | None = None
+    model_validation_dice: float | None = None
+    platform_mode: str | None = None
+    data_source: str | None = None
+    clinical_workstation: ClinicalWorkstation | None = None
     overlay_slices: list[str] = Field(default_factory=list)
     mask_url: str | None = None
+    volume_url: str | None = None
     report_url: str | None = None
 
 
@@ -129,7 +162,10 @@ class ModelInfo(BaseModel):
     out_channels: int
     region_labels: list[str]
     application_types: list[str]
-    anatomy_mode: str
+    anatomy_mode: str = "body"
+    clinical_grade: bool = False
+    msd_task_id: str | None = None
+    data_source: str = "legacy"
 
 
 class ModelPerformance(BaseModel):

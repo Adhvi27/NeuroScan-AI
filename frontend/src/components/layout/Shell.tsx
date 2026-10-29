@@ -3,6 +3,7 @@ import { Brain, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PlatformModeToggle } from "@/components/layout/PlatformModeToggle";
 
 const links = [
   { to: "/", label: "Home" },
@@ -31,7 +32,8 @@ export function Navbar() {
             NeuroScan <span className="text-emerald-300">AI</span>
           </span>
         </NavLink>
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-2 md:flex">
+          <PlatformModeToggle />
           {links.map((l) => (
             <NavLink
               key={l.to}
@@ -59,6 +61,7 @@ export function Navbar() {
       </div>
       {open && (
         <div className="border-t border-emerald-800/60 px-4 py-3 md:hidden">
+          <PlatformModeToggle className="mb-3 w-full justify-center" />
           {links.map((l) => (
             <NavLink
               key={l.to}

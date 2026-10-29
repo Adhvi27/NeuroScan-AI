@@ -24,6 +24,7 @@ ml/runs/
 backend/data/uploads/
 backend/data/results/
 backend/data/sample/
+backend/data/msd/
 !backend/data/.gitkeep
 
 # Secrets

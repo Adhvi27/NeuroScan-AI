@@ -1,20 +1,40 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Download, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/progress";
+import { ClinicalWorkstationPanel } from "@/components/clinical/ClinicalWorkstationPanel";
+import { PlatformModeBanner } from "@/components/layout/PlatformModeToggle";
 import { DashboardFrame } from "@/components/layout/WorkflowSidebar";
 import { AnalysisEducationPanel } from "@/components/education/AnalysisEducationPanel";
 import { ClassProbabilityChart } from "@/components/charts/ClassProbabilityChart";
+import { NiiVueMprViewer, type MprLayout } from "@/components/visualization/NiiVueMprViewer";
+import { SegmentationRegionPanel } from "@/components/visualization/SegmentationRegionPanel";
 import { absoluteApiUrl, runSegmentation } from "@/lib/api";
+import { defaultVisibleLabels, fallbackLegendFromRegions } from "@/lib/segmentationRegions";
 import { useSession } from "@/context/SessionContext";
 
 export default function ResultsPage() {
   const [params] = useSearchParams();
-  const { upload, segmentation, setSegmentation, applicationType } = useSession();
+  const { upload, segmentation, setSegmentation, applicationType, platformMode } = useSession();
   const scanId = params.get("scan") || upload?.scan_id;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [mprLayout, setMprLayout] = useState<MprLayout>("multiplanar");
+  const [showMri, setShowMri] = useState(true);
+  const [visibleLabels, setVisibleLabels] = useState<Record<number, boolean>>({});
+
+  const regionLegend = useMemo(() => {
+    if (segmentation?.region_legend?.length) return segmentation.region_legend;
+    if (segmentation?.regions?.length) return fallbackLegendFromRegions(segmentation.regions);
+    return [];
+  }, [segmentation]);
+
+  useEffect(() => {
+    if (regionLegend.length) {
+      setVisibleLabels(defaultVisibleLabels(regionLegend));
+    }
+  }, [segmentation?.job_id, regionLegend]);
 
   useEffect(() => {
     if (params.get("scan") && upload?.scan_id !== params.get("scan")) {
@@ -30,16 +50,34 @@ export default function ResultsPage() {
     setLoading(true);
     setError(undefined);
     try {
-      const result = await runSegmentation(scanId, applicationType);
+      const result = await runSegmentation(scanId, applicationType, platformMode);
       setSegmentation(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Segmentation failed");
+      const msg =
+        e &&
+        typeof e === "object" &&
+        "response" in e &&
+        e.response &&
+        typeof e.response === "object" &&
+        "data" in e.response &&
+        typeof (e.response as { data?: { detail?: string } }).data?.detail === "string"
+          ? (e.response as { data: { detail: string } }).data.detail
+          : e instanceof Error
+            ? e.message
+            : "Segmentation failed";
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
   const overlays = segmentation?.overlay_slices.map(absoluteApiUrl) ?? [];
+  const volumeUrl = segmentation?.volume_url
+    ? absoluteApiUrl(segmentation.volume_url)
+    : scanId
+      ? absoluteApiUrl(`/api/scans/${scanId}/volume`)
+      : undefined;
+  const maskUrl = segmentation?.mask_url ? absoluteApiUrl(segmentation.mask_url) : undefined;
   const spatial = segmentation?.spatial as
     | {
         confidence?: number;
@@ -54,6 +92,13 @@ export default function ResultsPage() {
     { label: "Sagittal", src: overlays[overlays.length - 1] },
   ].filter((v) => v.src);
 
+  const mprLayouts: { id: MprLayout; label: string }[] = [
+    { id: "multiplanar", label: "Multi-planar" },
+    { id: "axial", label: "Axial" },
+    { id: "coronal", label: "Coronal" },
+    { id: "sagittal", label: "Sagittal" },
+  ];
+
   const classData =
     segmentation?.class_probabilities?.map((c) => ({
       label: c.label,
@@ -64,9 +109,14 @@ export default function ResultsPage() {
     <DashboardFrame
       activeStep={2}
       title="Segmentation Results"
-      subtitle="Multi-planar overlays with BraTS-style sub-region colors"
+      subtitle={
+        platformMode === "clinical"
+          ? "Assistive segmentation — MSD organ models, radiologist verification required"
+          : "Multi-planar overlays with learning metrics and curriculum"
+      }
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <PlatformModeBanner />
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-400">
           Scan: <span className="text-emerald-300">{scanId ?? "none"}</span>
         </p>
@@ -107,18 +157,71 @@ export default function ResultsPage() {
               {segmentation.model_fallback && segmentation.model_fallback_reason && (
                 <p className="mt-1 text-xs text-amber-200/90">{segmentation.model_fallback_reason}</p>
               )}
+              {segmentation.model_validation_dice != null && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Validation Dice (held-out): {(segmentation.model_validation_dice * 100).toFixed(1)}% — higher is
+                  closer to training labels; real MRI needs MSD/BraTS training for clinical accuracy.
+                </p>
+              )}
             </div>
           )}
-          <div className="grid gap-4 lg:grid-cols-3">
-            {views.map((v) => (
-              <div key={v.label} className="overflow-hidden rounded-2xl border border-slate-700 bg-black">
-                <div className="border-b border-slate-800 px-3 py-2 text-xs font-semibold uppercase text-emerald-400">
-                  {v.label}
+          {volumeUrl && maskUrl ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-400">
+                  NIfTI viewer (true MPR)
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {mprLayouts.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setMprLayout(l.id)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                        mprLayout === l.id
+                          ? "bg-emerald-600 text-white"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
                 </div>
-                <img src={v.src} alt={v.label} className="aspect-square w-full object-contain" />
               </div>
-            ))}
-          </div>
+              <NiiVueMprViewer
+                volumeUrl={volumeUrl}
+                maskUrl={maskUrl}
+                layout={mprLayout}
+                height={480}
+                regionLegend={regionLegend}
+                visibleLabels={visibleLabels}
+                showMri={showMri}
+              />
+              {regionLegend.length > 0 && (
+                <div className="mt-4">
+                  <SegmentationRegionPanel
+                    legend={regionLegend}
+                    regions={segmentation.regions}
+                    showMri={showMri}
+                    onShowMriChange={setShowMri}
+                    visibleLabels={visibleLabels}
+                    onVisibleLabelsChange={setVisibleLabels}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-3">
+              {views.map((v) => (
+                <div key={v.label} className="overflow-hidden rounded-2xl border border-slate-700 bg-black">
+                  <div className="border-b border-slate-800 px-3 py-2 text-xs font-semibold uppercase text-emerald-400">
+                    {v.label} (preview)
+                  </div>
+                  <img src={v.src} alt={v.label} className="aspect-square w-full object-contain" />
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-slate-700 bg-slate-900/90 p-5">
@@ -147,34 +250,41 @@ export default function ResultsPage() {
                 </div>
               </dl>
               <p className="mt-3 text-xs text-slate-500">
-                Red = necrotic · Green = edema · Blue = enhancing tumor
+                Use the region panel under the viewer to show non-tumor MRI vs each abnormal sub-region.
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-700 bg-slate-900/90 p-5">
-              <h3 className="mb-3 text-sm font-semibold text-emerald-400">Sub-region volumes</h3>
+              <h3 className="mb-3 text-sm font-semibold text-emerald-400">Region volumes</h3>
               <div className="grid gap-2">
                 {segmentation.regions.map((r) => (
                   <div
-                    key={r.region}
+                    key={`${r.label_id ?? r.region}`}
                     className="flex justify-between rounded-lg bg-slate-950/80 px-3 py-2 text-sm"
                   >
                     <span className="text-slate-300">{r.region}</span>
-                    <span className="font-mono text-emerald-300">{r.volume_voxels.toLocaleString()} vx</span>
+                    <span className="font-mono text-emerald-300">
+                      {r.volume_voxels.toLocaleString()} vx
+                      {r.volume_cm3 != null && r.volume_cm3 > 0 ? ` · ${r.volume_cm3} cm³` : ""}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
 
-          {classData.length > 0 && (
+          {platformMode === "clinical" && segmentation.clinical_workstation && (
+            <ClinicalWorkstationPanel data={segmentation.clinical_workstation} />
+          )}
+
+          {platformMode === "education" && classData.length > 0 && (
             <div className="rounded-2xl border border-slate-700 bg-slate-900/90 p-5">
               <h3 className="mb-2 text-sm font-semibold text-white">Class probability (learning chart)</h3>
               <ClassProbabilityChart data={classData} />
             </div>
           )}
 
-          {segmentation.clinical_education && (
+          {platformMode === "education" && segmentation.clinical_education && (
             <AnalysisEducationPanel data={segmentation.clinical_education} />
           )}
 

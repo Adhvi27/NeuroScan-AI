@@ -4,12 +4,15 @@ import {
   Box,
   BrainCircuit,
   FileText,
+  GraduationCap,
   Layers,
   Microscope,
   ShieldAlert,
+  Stethoscope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useSession } from "@/context/SessionContext";
 
 const features = [
   {
@@ -45,8 +48,54 @@ const features = [
 ];
 
 export default function HomePage() {
+  const { setPlatformMode } = useSession();
+
   return (
     <div className="space-y-16">
+      <section className="grid gap-4 md:grid-cols-2">
+        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-emerald-950">
+              <GraduationCap className="h-6 w-6 text-emerald-600" />
+              Learning lab
+            </CardTitle>
+            <CardDescription>
+              Explainer upload flow, curriculum, educational risk charts, and demo model fallbacks for coursework.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild size="lg" className="w-full sm:w-auto">
+              <Link to="/applications" onClick={() => setPlatformMode("education")}>
+                Enter learning mode
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+        <Card className="border-sky-200 bg-gradient-to-br from-sky-50 to-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-slate-900">
+              <Stethoscope className="h-6 w-6 text-sky-600" />
+              Clinical workstation
+            </CardTitle>
+            <CardDescription>
+              Organ-specific models trained on public MSD data — assistive segmentation only, no demo fallbacks;
+              radiologist sign-off required.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              asChild
+              size="lg"
+              variant="secondary"
+              className="w-full border-sky-300 bg-sky-600 text-white hover:bg-sky-700 sm:w-auto"
+            >
+              <Link to="/applications" onClick={() => setPlatformMode("clinical")}>
+                Enter clinical mode
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
       <section className="grid items-center gap-10 lg:grid-cols-2">
         <div className="space-y-6 text-left">
           <p className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">

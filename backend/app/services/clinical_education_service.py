@@ -71,7 +71,8 @@ def _learning_from_analysis(
     else:
         bullets.append("No substantial abnormal region was segmented in this volume (under current model).")
 
-    top_region = max(regions, key=lambda r: r.get("volume_voxels", 0), default=None)
+    pathology_regions = [r for r in regions if r.get("kind") != "non_tumor" and r.get("label_id", -1) != 0]
+    top_region = max(pathology_regions, key=lambda r: r.get("volume_voxels", 0), default=None)
     if top_region and top_region.get("volume_voxels", 0) > 0:
         bullets.append(
             f"Largest predicted sub-region: {top_region['region']} "

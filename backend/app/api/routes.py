@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
@@ -15,7 +17,12 @@ from app.models.schemas import (
 from app.services import dicom_service, nifti_service, segmentation_service
 from app.services.metrics_service import get_model_performance, list_all_model_performance
 from app.services.application_catalog import list_applications
-from app.services.model_router import list_models_for_api, model_id_for_application
+from app.services.model_router import (
+    ClinicalModelUnavailableError,
+    SegmentationModelNotReadyError,
+    list_models_for_api,
+    model_id_for_application,
+)
 from app.services.storage import list_scans, load_scan_meta, new_id, save_scan_meta, scan_dir
 from app.core.config import CHECKPOINT_DIR
 
@@ -223,7 +230,15 @@ def segment(body: SegmentationRequest):
     except FileNotFoundError as exc:
         raise HTTPException(404, "Scan not found") from exc
     try:
-        result = segmentation_service.run_segmentation(body.scan_id, body.application_type)
+        result = segmentation_service.run_segmentation(
+            body.scan_id,
+            body.application_type,
+            body.platform_mode,
+        )
+    except ClinicalModelUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except SegmentationModelNotReadyError as exc:
+        raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(500, f"Segmentation failed: {exc}") from exc
 
@@ -235,6 +250,7 @@ def segment(body: SegmentationRequest):
         inference_ms=result["inference_ms"],
         device=result["device"],
         regions=result["regions"],
+        region_legend=result.get("region_legend", []),
         spatial=result.get("spatial"),
         class_probabilities=result.get("class_probabilities", []),
         clinical_education=result.get("clinical_education"),
@@ -245,8 +261,13 @@ def segment(body: SegmentationRequest):
         model_fallback=bool(result.get("model_fallback")),
         model_fallback_reason=result.get("model_fallback_reason"),
         checkpoint=result.get("checkpoint"),
+        model_validation_dice=result.get("model_validation_dice"),
+        platform_mode=result.get("platform_mode"),
+        data_source=result.get("data_source"),
+        clinical_workstation=result.get("clinical_workstation"),
         overlay_slices=[f"/api/results/{job_id}/preview/{n}" for n in result["overlay_slices"]],
         mask_url=f"/api/results/{job_id}/mask",
+        volume_url=f"/api/scans/{result['scan_id']}/volume",
         report_url=f"/api/results/{job_id}/report",
     )
 
@@ -257,6 +278,18 @@ def get_result(job_id: str):
         return segmentation_service.load_job_result(job_id)
     except FileNotFoundError as exc:
         raise HTTPException(404, "Job not found") from exc
+
+
+@router.get("/scans/{scan_id}/volume")
+def get_scan_volume(scan_id: str):
+    try:
+        meta = load_scan_meta(scan_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "Scan not found") from exc
+    path = Path(meta["nifti_path"])
+    if not path.exists():
+        raise HTTPException(404, "Volume not found")
+    return FileResponse(path, media_type="application/gzip", filename="volume.nii.gz")
 
 
 @router.get("/results/{job_id}/preview/{filename}")

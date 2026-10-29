@@ -108,9 +108,9 @@ export default function ApplicationsPage() {
       )}
 
       <p className="text-xs text-slate-500">
-        Research prototype: segmentation routes to a neuro BraTS-style U-Net or a body/MSK U-Net by module.
-        Missing body weights fall back to the neuro checkpoint with a warning on Results. Education and risk text
-        remain teaching heuristics — not FDA-cleared per-indication products.
+        Research prototype: **Learning** mode allows demo fallbacks; **Clinical** mode requires MSD organ
+        checkpoints (`python ml/train_msd.py` on public MSD or synthetic layout). Assistive only — not
+        FDA-cleared; validate on real MSD before any care setting.
       </p>
     </div>
   );

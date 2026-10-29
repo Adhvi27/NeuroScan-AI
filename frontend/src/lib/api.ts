@@ -74,10 +74,21 @@ export type SegmentationResponse = {
   inference_ms?: number;
   device: string;
   regions: {
+    label_id?: number;
     region: string;
+    kind?: string;
     dice?: number | null;
     iou?: number | null;
     volume_voxels: number;
+    volume_cm3?: number | null;
+  }[];
+  region_legend?: {
+    label_id: number;
+    name: string;
+    short_name: string;
+    kind: string;
+    color_rgb: [number, number, number];
+    description?: string;
   }[];
   spatial?: {
     tumor_detected?: boolean;
@@ -98,9 +109,27 @@ export type SegmentationResponse = {
   model_fallback?: boolean;
   model_fallback_reason?: string | null;
   checkpoint?: string;
+  model_validation_dice?: number | null;
+  model_meta?: { source?: string; mean_dice?: number; warning?: string };
   overlay_slices: string[];
   mask_url?: string;
+  volume_url?: string;
   report_url?: string;
+  platform_mode?: string;
+  data_source?: string;
+  clinical_workstation?: {
+    mode: string;
+    application_type: string;
+    model_name: string;
+    msd_task_id?: string | null;
+    primary_finding: string;
+    location_summary: string;
+    total_pathology_voxels: number;
+    volume_cm3?: number | null;
+    confidence_note?: number | null;
+    required_actions: string[];
+    disclaimer: string;
+  };
 };
 
 export type ModelPerformance = {
@@ -154,10 +183,15 @@ export async function fetchApplications() {
   return data.applications;
 }
 
-export async function runSegmentation(scan_id: string, application_type: string) {
+export async function runSegmentation(
+  scan_id: string,
+  application_type: string,
+  platform_mode: "education" | "clinical" = "education",
+) {
   const { data } = await api.post<SegmentationResponse>("/api/segment", {
     scan_id,
     application_type,
+    platform_mode,
   });
   return data;
 }
