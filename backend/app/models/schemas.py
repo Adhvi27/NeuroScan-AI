@@ -65,6 +65,8 @@ class RegionLegendEntry(BaseModel):
 class SpatialStats(BaseModel):
     tumor_detected: bool = False
     confidence: float = 0.0
+    confidence_source: str = "none"
+    median_model_confidence: float | None = None
     center_voxel: list[float] = Field(default_factory=list)
     center_normalized: list[float] = Field(default_factory=list)
     bounding_box_voxel: list[list[int]] = Field(default_factory=list)
@@ -152,6 +154,13 @@ class SegmentationResponse(BaseModel):
     mask_url: str | None = None
     volume_url: str | None = None
     report_url: str | None = None
+    report_pdf_url: str | None = None
+
+
+class GroundTruthUploadResponse(BaseModel):
+    scan_id: str
+    ground_truth_path: str
+    message: str = "Ground-truth label volume linked to scan"
 
 
 class ModelInfo(BaseModel):

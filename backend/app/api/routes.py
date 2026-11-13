@@ -7,6 +7,7 @@ from app.core.config import MAX_UPLOAD_BYTES, RESULTS_DIR, SAMPLE_DIR, UPLOAD_DI
 from app.models.schemas import (
     DicomFinalizeRequest,
     DicomStagingResponse,
+    GroundTruthUploadResponse,
     ModelInfo,
     ModelPerformance,
     ScanSummary,
@@ -147,6 +148,14 @@ async def load_sample():
     _, meta = nifti_service.load_nifti(nifti_path)
     vol, _ = nifti_service.load_nifti(nifti_path)
     previews = nifti_service.volume_to_png_slices(vol, dest / "previews", max_slices=9)
+
+    gt_source = SAMPLE_DIR / "labels" / "case_00.nii.gz"
+    ground_truth_path: str | None = None
+    if gt_source.exists():
+        gt_dest = dest / "ground_truth.nii.gz"
+        gt_dest.write_bytes(gt_source.read_bytes())
+        ground_truth_path = str(gt_dest)
+
     meta.update(
         {
             "scan_id": scan_id,
@@ -157,6 +166,8 @@ async def load_sample():
             "sample": True,
         }
     )
+    if ground_truth_path:
+        meta["ground_truth_path"] = ground_truth_path
     save_scan_meta(scan_id, meta)
     return UploadResponse(
         scan_id=scan_id,
@@ -195,6 +206,47 @@ def get_scan(scan_id: str):
         return load_scan_meta(scan_id)
     except FileNotFoundError as exc:
         raise HTTPException(404, "Scan not found") from exc
+
+
+@router.post("/scans/{scan_id}/ground-truth", response_model=GroundTruthUploadResponse)
+async def upload_ground_truth(scan_id: str, file: UploadFile = File(...)):
+    try:
+        meta = load_scan_meta(scan_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "Scan not found") from exc
+
+    name = file.filename or "labels.nii.gz"
+    lower = name.lower()
+    if not (lower.endswith(".nii") or lower.endswith(".nii.gz")):
+        raise HTTPException(400, "Only .nii or .nii.gz label volumes are supported")
+
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+
+    dest = scan_dir(scan_id)
+    out_name = "ground_truth.nii.gz" if lower.endswith(".gz") else "ground_truth.nii"
+    gt_path = dest / out_name
+    gt_path.write_bytes(data)
+
+    try:
+        gt_vol, _ = nifti_service.load_nifti(gt_path)
+        scan_vol, _ = nifti_service.load_nifti(Path(meta["nifti_path"]))
+        if gt_vol.shape[:3] != scan_vol.shape[:3]:
+            gt_path.unlink(missing_ok=True)
+            raise HTTPException(
+                400,
+                f"Label shape {gt_vol.shape[:3]} does not match scan shape {scan_vol.shape[:3]}",
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        gt_path.unlink(missing_ok=True)
+        raise HTTPException(400, f"Invalid label NIfTI: {exc}") from exc
+
+    meta["ground_truth_path"] = str(gt_path)
+    save_scan_meta(scan_id, meta)
+    return GroundTruthUploadResponse(scan_id=scan_id, ground_truth_path=str(gt_path))
 
 
 @router.get("/scans/{scan_id}/preview/{filename}")
@@ -269,6 +321,11 @@ def segment(body: SegmentationRequest):
         mask_url=f"/api/results/{job_id}/mask",
         volume_url=f"/api/scans/{result['scan_id']}/volume",
         report_url=f"/api/results/{job_id}/report",
+        report_pdf_url=(
+            f"/api/results/{job_id}/report.pdf"
+            if result.get("report_pdf_path")
+            else None
+        ),
     )
 
 
@@ -314,6 +371,14 @@ def download_report(job_id: str):
     if not path.exists():
         raise HTTPException(404, "Report not found")
     return FileResponse(path, media_type="text/plain", filename="neuroscan_report.txt")
+
+
+@router.get("/results/{job_id}/report.pdf")
+def download_report_pdf(job_id: str):
+    path = RESULTS_DIR / job_id / "report.pdf"
+    if not path.exists():
+        raise HTTPException(404, "PDF report not found")
+    return FileResponse(path, media_type="application/pdf", filename="neuroscan_report.pdf")
 
 
 @router.get("/models", response_model=list[ModelInfo])

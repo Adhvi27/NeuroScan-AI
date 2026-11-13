@@ -13,3 +13,4 @@ monai==1.4.0
 scikit-image==0.25.0
 scipy==1.15.0
 aiofiles==24.1.0
+reportlab==4.2.5

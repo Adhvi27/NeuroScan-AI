@@ -17,8 +17,8 @@ import { defaultVisibleLabels, fallbackLegendFromRegions } from "@/lib/segmentat
 import { useSession } from "@/context/SessionContext";
 
 const defaultSpatial: SpatialData = {
-  tumor_detected: true,
-  confidence: 0.85,
+  tumor_detected: false,
+  confidence: 0,
   center_normalized: [0.2, 0.05, -0.15],
   tumor_volume_cm3: 24.6,
   surface_area_cm2: 18.2,

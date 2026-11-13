@@ -15,11 +15,12 @@ from app.core.config import CHECKPOINT_DIR
 from app.services import nifti_service
 from app.services.storage import load_scan_meta, new_id, result_dir, save_scan_meta, write_json
 from ml.evaluate import compute_region_metrics
-from ml.inference import load_model, predict_volume
+from ml.inference import load_model, predict_volume_detailed
+from ml.probability_metrics import class_probabilities_from_model
 from ml.region_legend import build_region_legend
 from ml.postprocess_mask import refine_segmentation_mask
 from ml.report import build_text_report
-from app.services.spatial_service import compute_class_probabilities, compute_spatial_stats
+from app.services.spatial_service import compute_spatial_stats
 from app.services.clinical_education_service import build_clinical_education_package
 from app.services.clinical_workstation_service import build_clinical_workstation_package
 from app.services.model_router import (
@@ -74,7 +75,7 @@ def run_segmentation(
         )
 
     t0 = time.perf_counter()
-    pred = predict_volume(model, volume, device)
+    pred, inference_stats = predict_volume_detailed(model, volume, device, profile.region_names)
     pred = plan["postprocess"](pred)
     label_ids = tuple(profile.region_names.keys())
     pred = refine_segmentation_mask(pred, region_labels=label_ids)
@@ -89,9 +90,16 @@ def run_segmentation(
         volume, preview_dir, prefix="overlay", overlay=pred, max_slices=12
     )
 
+    ground_truth_path = meta.get("ground_truth_path")
+    ground_truth = None
+    if ground_truth_path:
+        gt_path = Path(ground_truth_path)
+        if gt_path.exists():
+            ground_truth, _ = nifti_service.load_nifti(gt_path)
+
     regions = compute_region_metrics(
         pred,
-        ground_truth=None,
+        ground_truth=ground_truth,
         region_names=profile.region_names,
         anatomy_mode=profile.anatomy_mode,
     )
@@ -100,7 +108,13 @@ def run_segmentation(
     for row in regions:
         row["volume_cm3"] = round(row["volume_voxels"] * voxel_mm3 / 1000.0, 4)
     region_legend = build_region_legend(profile.region_names, profile.anatomy_mode)
-    spatial = compute_spatial_stats(pred, voxel_size, anatomy_mode=profile.anatomy_mode)
+    spatial = compute_spatial_stats(
+        pred,
+        voxel_size,
+        anatomy_mode=profile.anatomy_mode,
+        model_confidence=inference_stats.get("mean_foreground_confidence"),
+        median_model_confidence=inference_stats.get("median_foreground_confidence"),
+    )
 
     clinical_education = None
     clinical_workstation = None
@@ -115,7 +129,7 @@ def run_segmentation(
             profile.msd_task_id,
         )
     else:
-        class_probabilities = compute_class_probabilities(pred, profile)
+        class_probabilities = class_probabilities_from_model(profile, inference_stats)
         clinical_education = build_clinical_education_package(
             application_type,
             spatial,
@@ -133,9 +147,31 @@ def run_segmentation(
             device.type,
             model_id=profile.model_id,
             model_name=profile.display_name,
+            spatial=spatial,
+            validation_dice=ckpt_meta.get("mean_dice"),
         ),
         encoding="utf-8",
     )
+
+    pdf_path: Path | None = out / "report.pdf"
+    try:
+        from ml.report_pdf import build_pdf_report
+
+        build_pdf_report(
+            pdf_path,
+            scan_id=scan_id,
+            job_id=job_id,
+            model_name=profile.display_name,
+            checkpoint=checkpoint_path.name,
+            inference_ms=inference_ms,
+            device=device.type,
+            spatial=spatial,
+            regions=[r if isinstance(r, dict) else r for r in regions],
+            validation_dice=ckpt_meta.get("mean_dice"),
+            preview_png=(preview_dir / overlay_names[0]) if overlay_names else None,
+        )
+    except Exception:
+        pdf_path = None
 
     result = {
         "job_id": job_id,
@@ -160,8 +196,10 @@ def run_segmentation(
         "overlay_slices": overlay_names,
         "mask_path": str(mask_path),
         "report_path": str(report_path),
+        "report_pdf_path": str(pdf_path) if pdf_path and pdf_path.exists() else None,
         "checkpoint": checkpoint_path.name,
         "model_meta": ckpt_meta,
+        "inference_stats": inference_stats,
         "model_validation_dice": ckpt_meta.get("mean_dice"),
     }
     write_json(out / "result.json", result)

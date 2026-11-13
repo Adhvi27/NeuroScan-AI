@@ -10,8 +10,15 @@ export default function ReportPage() {
   const { segmentation, upload } = useSession();
   const edu = segmentation?.clinical_education;
   const spatial = segmentation?.spatial as
-    | { confidence?: number; tumor_volume_cm3?: number; affected_region?: string }
+    | {
+        confidence?: number;
+        confidence_source?: string;
+        tumor_volume_cm3?: number;
+        affected_region?: string;
+      }
     | undefined;
+  const confLabel =
+    spatial?.confidence_source === "model_softmax_mean" ? "Model confidence (mean softmax)" : "Confidence";
 
   return (
     <DashboardFrame activeStep={4} title="MRI Analysis Report" subtitle="Export summaries for lab submissions">
@@ -36,7 +43,12 @@ export default function ReportPage() {
               <p>Job: {segmentation.job_id}</p>
               <p>Application: {edu?.application_title ?? "—"}</p>
               <p>Risk (edu.): {edu?.risk.label ?? "—"}</p>
-              <p>Confidence (edu.): {((spatial?.confidence ?? 0) * 100).toFixed(1)}%</p>
+              <p>
+                {confLabel}: {((spatial?.confidence ?? 0) * 100).toFixed(1)}%
+              </p>
+              {segmentation.model_validation_dice != null && (
+                <p>Checkpoint val Dice: {(segmentation.model_validation_dice * 100).toFixed(1)}%</p>
+              )}
               <p>Tumor volume: {spatial?.tumor_volume_cm3 ?? "—"} cm³</p>
               <p>Region: {spatial?.affected_region ?? "—"}</p>
               <p className="pt-2 text-slate-500">Research use only — not for clinical diagnosis.</p>
@@ -48,6 +60,13 @@ export default function ReportPage() {
               <Button asChild className="h-12 w-full justify-start text-base">
                 <a href={absoluteApiUrl(segmentation.report_url)} download>
                   <Download className="h-5 w-5" /> Download Text Report
+                </a>
+              </Button>
+            )}
+            {segmentation.report_pdf_url && (
+              <Button asChild variant="secondary" className="h-12 w-full justify-start text-base">
+                <a href={absoluteApiUrl(segmentation.report_pdf_url)} download>
+                  <Download className="h-5 w-5" /> Download PDF Report
                 </a>
               </Button>
             )}

@@ -93,6 +93,8 @@ export type SegmentationResponse = {
   spatial?: {
     tumor_detected?: boolean;
     confidence?: number;
+    confidence_source?: string;
+    median_model_confidence?: number | null;
     center_voxel?: number[];
     center_normalized?: number[];
     bounding_box_voxel?: number[][];
@@ -115,6 +117,7 @@ export type SegmentationResponse = {
   mask_url?: string;
   volume_url?: string;
   report_url?: string;
+  report_pdf_url?: string;
   platform_mode?: string;
   data_source?: string;
   clinical_workstation?: {
@@ -150,6 +153,16 @@ export async function uploadNifti(file: File) {
   const form = new FormData();
   form.append("file", file);
   const { data } = await api.post<UploadResponse>("/api/upload/nifti", form);
+  return data;
+}
+
+export async function uploadGroundTruth(scan_id: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<{ scan_id: string; ground_truth_path: string; message: string }>(
+    `/api/scans/${scan_id}/ground-truth`,
+    form,
+  );
   return data;
 }
 

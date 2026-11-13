@@ -12,6 +12,7 @@ import {
   finalizeDicom,
   loadSampleScan,
   stageDicom,
+  uploadGroundTruth,
   uploadNifti,
   type DicomSeries,
   type MriApplicationOption,
@@ -43,6 +44,9 @@ export default function AnalyzePage() {
   const [activeStepId, setActiveStepId] = useState<string>();
   const [processSteps, setProcessSteps] = useState(NIFTI_STEPS);
   const [completeSummary, setCompleteSummary] = useState<string>();
+  const [gtLinked, setGtLinked] = useState(false);
+  const [gtUploading, setGtUploading] = useState(false);
+  const gtInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchApplications()
@@ -63,6 +67,7 @@ export default function AnalyzePage() {
     setUpload(data);
     setScanId(data.scan_id);
     setMeta(data.metadata);
+    setGtLinked(Boolean(data.metadata?.ground_truth_path));
     setPreview(data.preview_slices.map(absoluteApiUrl));
     setDicomSeries(undefined);
     setStagingId(undefined);
@@ -170,6 +175,20 @@ export default function AnalyzePage() {
       setError(e instanceof Error ? e.message : "DICOM conversion failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onGroundTruth = async (file: File) => {
+    if (!scanId) return;
+    setGtUploading(true);
+    setError(undefined);
+    try {
+      await uploadGroundTruth(scanId, file);
+      setGtLinked(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ground-truth upload failed");
+    } finally {
+      setGtUploading(false);
     }
   };
 
@@ -298,9 +317,43 @@ export default function AnalyzePage() {
                   {JSON.stringify(meta.voxel_size_mm ?? "—")}
                 </p>
                 {scanId && (
-                  <Button className="mt-4 w-full" onClick={() => navigate(`/results?scan=${scanId}`)}>
-                    Continue to segmentation
-                  </Button>
+                  <>
+                    <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Optional ground truth
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Upload a label NIfTI with the same 3D shape as the scan to compute Dice on the next
+                        segmentation run.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-2 w-full"
+                        disabled={gtUploading}
+                        onClick={() => gtInputRef.current?.click()}
+                      >
+                        {gtLinked ? "Replace label volume" : "Upload label volume (.nii.gz)"}
+                      </Button>
+                      {gtLinked && (
+                        <p className="mt-2 text-xs text-emerald-400">Ground-truth volume linked to this scan.</p>
+                      )}
+                      <input
+                        ref={gtInputRef}
+                        type="file"
+                        className="hidden"
+                        accept=".nii,.nii.gz,application/gzip"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) onGroundTruth(f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </div>
+                    <Button className="mt-4 w-full" onClick={() => navigate(`/results?scan=${scanId}`)}>
+                      Continue to segmentation
+                    </Button>
+                  </>
                 )}
               </>
             ) : (

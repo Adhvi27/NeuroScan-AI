@@ -70,6 +70,17 @@ def _roi_size_for_volume(shape: tuple[int, ...]) -> tuple[int, int, int]:
 
 
 def predict_volume(model: UNet, volume: np.ndarray, device: torch.device) -> np.ndarray:
+    pred, _ = predict_volume_detailed(model, volume, device, {})
+    return pred
+
+
+def predict_volume_detailed(
+    model: UNet,
+    volume: np.ndarray,
+    device: torch.device,
+    region_names: dict[int, str],
+) -> tuple[np.ndarray, dict]:
+    """Sliding-window inference with softmax confidence summaries on predicted labels."""
     prepped = scale_intensity_training_match(volume)
     tensor = torch.from_numpy(prepped).float().unsqueeze(0).unsqueeze(0).to(device)
     roi_size = _roi_size_for_volume(volume.shape)
@@ -86,14 +97,35 @@ def predict_volume(model: UNet, volume: np.ndarray, device: torch.device) -> np.
             overlap=0.5,
             mode="gaussian",
         )
-        pred = torch.argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
+        probs = torch.softmax(logits, dim=1)
+        pred = torch.argmax(probs, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
 
     if pred.shape != volume.shape[:3]:
         from scipy.ndimage import zoom
 
         factors = [o / p for o, p in zip(volume.shape[:3], pred.shape)]
         pred = zoom(pred.astype(np.float32), factors, order=0).astype(np.uint8)
-    return pred
+
+    stats: dict = {
+        "mean_foreground_confidence": 0.0,
+        "median_foreground_confidence": 0.0,
+        "per_class_confidence": {},
+        "confidence_source": "model_softmax_mean",
+    }
+    if region_names and np.any(pred > 0):
+        max_prob = probs.max(dim=1).values.squeeze(0).cpu().numpy()
+        fg = pred > 0
+        stats["mean_foreground_confidence"] = round(float(max_prob[fg].mean()), 4)
+        stats["median_foreground_confidence"] = round(float(np.median(max_prob[fg])), 4)
+        probs_np = probs.squeeze(0).cpu().numpy()
+        for label_id in region_names:
+            mask = pred == label_id
+            if np.any(mask):
+                stats["per_class_confidence"][label_id] = round(
+                    float(probs_np[label_id][mask].mean()), 4
+                )
+
+    return pred, stats
 
 
 def profile_by_id(model_id: str) -> ModelProfile:

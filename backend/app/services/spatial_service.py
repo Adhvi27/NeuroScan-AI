@@ -7,6 +7,8 @@ def compute_spatial_stats(
     pred: np.ndarray,
     voxel_size_mm: list[float] | None = None,
     anatomy_mode: str = "neuro",
+    model_confidence: float | None = None,
+    median_model_confidence: float | None = None,
 ) -> dict:
     if voxel_size_mm is None or len(voxel_size_mm) < 3:
         voxel_size_mm = [1.0, 1.0, 1.0]
@@ -18,6 +20,8 @@ def compute_spatial_stats(
         return {
             "tumor_detected": False,
             "confidence": 0.0,
+            "confidence_source": "none",
+            "median_model_confidence": 0.0,
             "center_voxel": [0.0, 0.0, 0.0],
             "center_normalized": [0.0, 0.0, 0.0],
             "bounding_box_voxel": [[0, 0, 0], [0, 0, 0]],
@@ -35,7 +39,6 @@ def compute_spatial_stats(
     voxel_vol_mm3 = float(voxel_size_mm[0] * voxel_size_mm[1] * voxel_size_mm[2])
     volume_cm3 = volume_voxels * voxel_vol_mm3 / 1000.0
 
-    # Rough surface area from bounding box faces (educational estimate)
     dims_mm = (maxs - mins + 1) * np.array(voxel_size_mm)
     surface_cm2 = float(2 * (dims_mm[0] * dims_mm[1] + dims_mm[1] * dims_mm[2] + dims_mm[0] * dims_mm[2]) / 100.0)
 
@@ -43,10 +46,14 @@ def compute_spatial_stats(
     center_norm[0] *= 1.2
     center_norm[2] *= 0.9
 
-    # Educational confidence from relative tumor burden
-    brain_voxels = max(int(np.prod(shape) * 0.35), 1)
-    burden = min(volume_voxels / brain_voxels, 1.0)
-    confidence = round(0.55 + burden * 0.42, 3)
+    if model_confidence is not None:
+        confidence = round(float(model_confidence), 4)
+        confidence_source = "model_softmax_mean"
+    else:
+        brain_voxels = max(int(np.prod(shape) * 0.35), 1)
+        burden = min(volume_voxels / brain_voxels, 1.0)
+        confidence = round(0.55 + burden * 0.42, 3)
+        confidence_source = "legacy_volume_burden_demo"
 
     x, y, z = center
     if anatomy_mode == "body":
@@ -81,6 +88,8 @@ def compute_spatial_stats(
     return {
         "tumor_detected": True,
         "confidence": confidence,
+        "confidence_source": confidence_source,
+        "median_model_confidence": median_model_confidence,
         "center_voxel": [float(c) for c in center],
         "center_normalized": [float(c) for c in center_norm],
         "bounding_box_voxel": [mins.tolist(), maxs.tolist()],
@@ -89,29 +98,3 @@ def compute_spatial_stats(
         "surface_area_cm2": round(surface_cm2, 2),
         "affected_region": affected,
     }
-
-
-def compute_class_probabilities(pred: np.ndarray, profile=None) -> list[dict]:
-    from ml.model_registry import NEURO_PROFILE
-
-    profile = profile or NEURO_PROFILE
-    counts = {label: int((pred == label).sum()) for label in profile.region_names}
-    total = sum(counts.values()) or 1
-
-    raw = [
-        counts.get(3, 0) / total * 0.72 + 0.08,
-        counts.get(1, 0) / total * 0.35 + 0.05,
-        counts.get(2, 0) / total * 0.22 + 0.04,
-        max(0.02, 1.0 - (counts.get(3, 0) + counts.get(1, 0)) / total * 0.5) * 0.15,
-    ]
-    labels = list(profile.class_probability_labels)
-    if len(labels) < len(raw) + 1:
-        labels = labels + [f"Class {i}" for i in range(len(raw) + 1 - len(labels))]
-    primary_labels = labels[:4]
-    no_label = labels[4] if len(labels) > 4 else "No abnormality"
-    s = sum(raw) or 1
-    probs = [round(v / s, 3) for v in raw]
-    no_tumor = max(0.0, round(1.0 - sum(probs[:3]) * 0.95, 3))
-    items = [{"label": lbl, "probability": p} for lbl, p in zip(primary_labels, probs)]
-    items.append({"label": no_label, "probability": no_tumor})
-    return items

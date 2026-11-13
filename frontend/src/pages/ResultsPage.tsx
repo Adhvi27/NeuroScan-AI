@@ -81,11 +81,23 @@ export default function ResultsPage() {
   const spatial = segmentation?.spatial as
     | {
         confidence?: number;
+        confidence_source?: string;
+        median_model_confidence?: number | null;
         tumor_volume_cm3?: number;
         affected_region?: string;
         tumor_detected?: boolean;
       }
     | undefined;
+
+  const confidenceLabel =
+    spatial?.confidence_source === "model_softmax_mean"
+      ? "Model confidence (mean softmax)"
+      : spatial?.confidence_source === "legacy_volume_burden_demo"
+        ? "Confidence (legacy demo — re-run segmentation)"
+        : "Model confidence";
+
+  const pathologyRegions =
+    segmentation?.regions.filter((r) => (r.label_id ?? 0) !== 0 && r.volume_voxels > 0) ?? [];
   const views = [
     { label: "Axial", src: overlays[0] },
     { label: "Coronal", src: overlays[Math.floor(overlays.length / 2)] },
@@ -230,10 +242,15 @@ export default function ResultsPage() {
                 {spatial?.tumor_detected !== false ? "Tumor Detected" : "No Tumor Detected"}
               </p>
               <p className="text-sm text-slate-400">
-                Confidence (educational):{" "}
+                {confidenceLabel}:{" "}
                 <span className="font-semibold text-white">
-                  {((spatial?.confidence ?? 0.85) * 100).toFixed(1)}%
+                  {((spatial?.confidence ?? 0) * 100).toFixed(1)}%
                 </span>
+                {spatial?.median_model_confidence != null && (
+                  <span className="ml-2 text-xs text-slate-500">
+                    median {(spatial.median_model_confidence * 100).toFixed(1)}%
+                  </span>
+                )}
               </p>
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between text-slate-400">
@@ -257,15 +274,18 @@ export default function ResultsPage() {
             <div className="rounded-2xl border border-slate-700 bg-slate-900/90 p-5">
               <h3 className="mb-3 text-sm font-semibold text-emerald-400">Region volumes</h3>
               <div className="grid gap-2">
-                {segmentation.regions.map((r) => (
+                {pathologyRegions.map((r) => (
                   <div
                     key={`${r.label_id ?? r.region}`}
                     className="flex justify-between rounded-lg bg-slate-950/80 px-3 py-2 text-sm"
                   >
                     <span className="text-slate-300">{r.region}</span>
-                    <span className="font-mono text-emerald-300">
+                    <span className="font-mono text-emerald-300 text-right">
                       {r.volume_voxels.toLocaleString()} vx
                       {r.volume_cm3 != null && r.volume_cm3 > 0 ? ` · ${r.volume_cm3} cm³` : ""}
+                      {r.dice != null && (
+                        <span className="block text-xs text-slate-400">Dice vs GT {r.dice.toFixed(3)}</span>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -292,7 +312,14 @@ export default function ResultsPage() {
             {segmentation.report_url && (
               <Button asChild variant="secondary">
                 <a href={absoluteApiUrl(segmentation.report_url)} download>
-                  <Download className="h-4 w-4" /> Report
+                  <Download className="h-4 w-4" /> Text report
+                </a>
+              </Button>
+            )}
+            {segmentation.report_pdf_url && (
+              <Button asChild variant="secondary">
+                <a href={absoluteApiUrl(segmentation.report_pdf_url)} download>
+                  <Download className="h-4 w-4" /> PDF report
                 </a>
               </Button>
             )}
